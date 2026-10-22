@@ -1,0 +1,105 @@
+version: "3.8"
+
+services:
+  # ─── Banco de dados MySQL ───────────────────────────────────────────────────
+  mysql:
+    image: mysql:5.7
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    # Não expõe porta para a máquina hospedeira (acesso apenas pelos Wordpress)
+    networks:
+      - backend
+
+  # ─── Instância WordPress 1 ─────────────────────────────────────────────────
+  wordpress1:
+    image: wordpress:5.4.2-php7.2-apache
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    volumes:
+      - ./html:/var/www/html
+    # Sem mapeamento de porta para o host (acesso apenas pelo Nginx)
+    networks:
+      - backend
+
+  # ─── Instância WordPress 2 ─────────────────────────────────────────────────
+  wordpress2:
+    profiles: ["wp2", "wp3"]
+    image: wordpress:5.4.2-php7.2-apache
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    volumes:
+      - ./html:/var/www/html
+    networks:
+      - backend
+
+  # ─── Instância WordPress 3 ─────────────────────────────────────────────────
+  wordpress3:
+    profiles: ["wp3"]
+    image: wordpress:5.4.2-php7.2-apache
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    volumes:
+      - ./html:/var/www/html
+    networks:
+      - backend
+
+  # ─── Nginx (balanceador de carga) ──────────────────────────────────────────
+  nginx:
+    image: nginx:1.19.0
+    restart: always
+    depends_on:
+      - wordpress1
+    ports:
+      - "80:80" # Único serviço exposto ao host
+    volumes:
+      - ${NGINX_CONFIG:-./nginx.conf}:/etc/nginx/nginx.conf:ro
+      - ./html:/usr/share/nginx/html:ro # conteúdo compartilhado
+    networks:
+      - backend
+
+  # ─── Locust (testes de carga — Trabalho 3) ─────────────────────────────────
+  locust:
+    image: locustio/locust:2.29.0
+    restart: "no"
+    depends_on:
+      - nginx
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./locust:/mnt/locust
+      - ./resultados:/mnt/locust/resultados
+    environment:
+      # Host interno da rede Docker (mesmo serviço exposto na porta 80 do Trabalho 2)
+      ATTACKED_HOST: http://nginx
+    networks:
+      - backend
+    # Interface web; para teste headless use scripts/run_locust_headless.ps1
+    command: >
+      -f /mnt/locust/locustfile_cenario1_imagem_1mb.py
+      --host=http://nginx
+
+networks:
+  backend:
+    driver: bridge
